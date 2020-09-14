@@ -85,6 +85,81 @@ struct V2
 	float x, y;
 };
 
+struct BresenhamContext
+{
+	int x1, y1;
+	int x2, y2;
+	int abs_x, abs_y;
+	int add_x, add_y;
+	int error, error2;
+};
+
+static int
+func IntAbs(int x)
+{
+	int abs_x = (x > 0) ? x : (-x);
+	return abs_x;
+}
+
+static BresenhamContext
+func BresenhamInit(V2 p1, V2 p2)
+{
+	BresenhamContext context = {};
+	context.x1 = (int)p1.x;
+	context.y1 = (int)p1.y;
+	context.x2 = (int)p2.x;
+	context.y2 = (int)p2.y;
+
+	context.abs_x = IntAbs(context.x1 - context.x2);
+	context.abs_y = IntAbs(context.y1 - context.y2);
+
+	context.add_x = 1;
+	if(context.x1 > context.x2) context.add_x = -1;
+
+	context.add_y = 1;
+	if(context.y1 > context.y2) context.add_y = -1;
+
+	context.error = 0;
+	if(context.abs_x > context.abs_y) context.error = context.abs_x / 2;
+	else context.error = -context.abs_y / 2;
+
+	context.error2 = 0;
+
+	return context;
+}
+
+static void
+func BresenhamAdvance(BresenhamContext *context)
+{
+	context->error2 = context->error;
+	if(context->error2 > -context->abs_x)
+	{
+		context->error -= context->abs_y;
+		context->x1 += context->add_x;
+	}
+	if(context->error2 < context->abs_y)
+	{
+		context->error += context->abs_x;
+		context->y1 += context->add_y;
+	}
+}
+
+static void
+func Bresenham(Bitmap *bitmap, V2 p1, V2 p2, unsigned int color)
+{
+	BresenhamContext context = BresenhamInit(p1, p2);
+	while(1)
+	{
+		SetPixelColor(bitmap, context.y1, context.x1, color);
+		if(context.x1 == context.x2 && context.y1 == context.y2)
+		{
+			break;
+		}
+
+		BresenhamAdvance(&context);
+	}
+}
+
 static V2
 func Point2(float x, float y)
 {
@@ -364,6 +439,14 @@ func ProjectToScreen(V3 p3)
 }
 
 static void
+func DrawLine3(Bitmap *bitmap, V3 p1, V3 p2, unsigned int color)
+{
+	V2 p1_projected = ProjectToScreen(p1);
+	V2 p2_projected = ProjectToScreen(p2);
+	Bresenham(bitmap, p1_projected, p2_projected, color);
+}
+
+static void
 func DrawQuad3(Bitmap *bitmap, Quad3 quad3, unsigned int color)
 {
 	Quad2 quad2 = {};
@@ -375,16 +458,16 @@ func DrawQuad3(Bitmap *bitmap, Quad3 quad3, unsigned int color)
 	if(IsValidQuad2(quad2)) DrawQuad2(bitmap, quad2, color);
 }
 
-enum CubeEdge
+enum CubeCorner
 {
-	CUBE_EDGE_LUF,
-	CUBE_EDGE_LUB,
-	CUBE_EDGE_LDF,
-	CUBE_EDGE_LDB,
-	CUBE_EDGE_RUF,
-	CUBE_EDGE_RUB,
-	CUBE_EDGE_RDF,
-	CUBE_EDGE_RDB
+	CORNER_LUF,
+	CORNER_LUB,
+	CORNER_LDF,
+	CORNER_LDB,
+	CORNER_RUF,
+	CORNER_RUB,
+	CORNER_RDF,
+	CORNER_RDB
 };
 
 static void
@@ -402,23 +485,35 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 	}
 
 	V3 unit_cube_corners[8] = {};
-	unit_cube_corners[CUBE_EDGE_LUF] = Point3(-1.0, +1.0, +1.0f);
-	unit_cube_corners[CUBE_EDGE_LUB] = Point3(-1.0, +1.0, -1.0f);
-	unit_cube_corners[CUBE_EDGE_LDF] = Point3(-1.0, -1.0, +1.0f);
-	unit_cube_corners[CUBE_EDGE_LDB] = Point3(-1.0, -1.0, -1.0f);
-	unit_cube_corners[CUBE_EDGE_RUF] = Point3(+1.0, +1.0, +1.0f);
-	unit_cube_corners[CUBE_EDGE_RUB] = Point3(+1.0, +1.0, -1.0f);
-	unit_cube_corners[CUBE_EDGE_RDF] = Point3(+1.0, -1.0, +1.0f);
-	unit_cube_corners[CUBE_EDGE_RDB] = Point3(+1.0, -1.0, -1.0f);
+	unit_cube_corners[CORNER_LUF] = Point3(-1.0, +1.0, +1.0f);
+	unit_cube_corners[CORNER_LUB] = Point3(-1.0, +1.0, -1.0f);
+	unit_cube_corners[CORNER_LDF] = Point3(-1.0, -1.0, +1.0f);
+	unit_cube_corners[CORNER_LDB] = Point3(-1.0, -1.0, -1.0f);
+	unit_cube_corners[CORNER_RUF] = Point3(+1.0, +1.0, +1.0f);
+	unit_cube_corners[CORNER_RUB] = Point3(+1.0, +1.0, -1.0f);
+	unit_cube_corners[CORNER_RDF] = Point3(+1.0, -1.0, +1.0f);
+	unit_cube_corners[CORNER_RDB] = Point3(+1.0, -1.0, -1.0f);
 
 	int cube_face_corners[6][4] = 
 	{
-		{CUBE_EDGE_LUB, CUBE_EDGE_LUF, CUBE_EDGE_LDF, CUBE_EDGE_LDB},
-		{CUBE_EDGE_RUF, CUBE_EDGE_RUB, CUBE_EDGE_RDB, CUBE_EDGE_RDF},
-		{CUBE_EDGE_LUF, CUBE_EDGE_LUB, CUBE_EDGE_RUB, CUBE_EDGE_RUF},
-		{CUBE_EDGE_LDB, CUBE_EDGE_LDF, CUBE_EDGE_RDF, CUBE_EDGE_RDB},
-		{CUBE_EDGE_LUF, CUBE_EDGE_RUF, CUBE_EDGE_RDF, CUBE_EDGE_LDF},
-		{CUBE_EDGE_LUB, CUBE_EDGE_LDB, CUBE_EDGE_RDB, CUBE_EDGE_RUB}
+		{CORNER_LUB, CORNER_LUF, CORNER_LDF, CORNER_LDB},
+		{CORNER_RUF, CORNER_RUB, CORNER_RDB, CORNER_RDF},
+		{CORNER_LUF, CORNER_LUB, CORNER_RUB, CORNER_RUF},
+		{CORNER_LDB, CORNER_LDF, CORNER_RDF, CORNER_RDB},
+		{CORNER_LUF, CORNER_RUF, CORNER_RDF, CORNER_LDF},
+		{CORNER_LUB, CORNER_LDB, CORNER_RDB, CORNER_RUB}
+	};
+
+	int cube_edges[12][2] = 
+	{
+		{CORNER_LUF, CORNER_RUF}, {CORNER_RUF, CORNER_RUB}, 
+		{CORNER_RUB, CORNER_LUB}, {CORNER_LUB, CORNER_LUF},
+		
+		{CORNER_LDF, CORNER_RDF}, {CORNER_RDF, CORNER_RDB}, 
+		{CORNER_RDB, CORNER_LDB}, {CORNER_LDB, CORNER_LDF},
+
+		{CORNER_LUF, CORNER_LDF}, {CORNER_RUF, CORNER_RDF},
+		{CORNER_LUB, CORNER_LDB}, {CORNER_RUB, CORNER_RDB}
 	};
 
 	unsigned int cube_face_colors[6] =
@@ -461,14 +556,36 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 	for(int face_id = 0; face_id < 6; face_id++)
 	{
 		Quad3 q3 = {};
-		for(int corner_id = 0; corner_id < 4; corner_id++)
+		for(int face_corner_id = 0; face_corner_id < 4; face_corner_id++)
 		{
-			int edge_id = cube_face_corners[face_id][corner_id];
-			q3.p[corner_id] = cube_corners[edge_id];
+			int corner_id = cube_face_corners[face_id][face_corner_id];
+			q3.p[face_corner_id] = cube_corners[corner_id];
 		}
 
 		unsigned int color = cube_face_colors[face_id];
 		DrawQuad3(bitmap, q3, color);
+	}
+
+	float min_corner_z = 0.0f;
+	for(int corner_id = 0; corner_id < 8; corner_id++)
+	{
+		V3 corner = cube_corners[corner_id];
+		if(corner.z < min_corner_z) min_corner_z = corner.z;
+	}
+
+	unsigned int edge_color = 0x000000;
+	for(int edge_id = 0; edge_id < 12; edge_id++)
+	{
+		int corner_id1 = cube_edges[edge_id][0];
+		int corner_id2 = cube_edges[edge_id][1];
+
+		V3 corner1 = cube_corners[corner_id1];
+		V3 corner2 = cube_corners[corner_id2];
+
+		if(corner1.z > min_corner_z && corner2.z > min_corner_z)
+		{
+			DrawLine3(bitmap, corner1, corner2, edge_color);
+		}
 	}
 }
 
