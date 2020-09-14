@@ -75,7 +75,7 @@ struct V2
 };
 
 static V2
-func Point(float x, float y)
+func Point2(float x, float y)
 {
 	V2 p = {};
 	p.x = x;
@@ -84,7 +84,7 @@ func Point(float x, float y)
 }
 
 static V2
-func Vector(float x, float y)
+func Vector2(float x, float y)
 {
 	V2 v = {};
 	v.x = x;
@@ -119,6 +119,51 @@ operator-(V2 p1, V2 p2)
 	return p;
 }
 
+struct V3
+{
+	float x, y, z;
+};
+
+static V3
+func Point3(float x, float y, float z)
+{
+	V3 p = {};
+	p.x = x;
+	p.y = y;
+	p.z = z;
+	return p;
+}
+
+static V3
+func Vector3(float x, float y, float z)
+{
+	V3 v = {};
+	v.x = x;
+	v.y = y;
+	v.z = z;
+	return v;
+}
+
+static V3
+operator*(float a, V3 p)
+{
+	V3 r = {};
+	r.x = a * p.x;
+	r.y = a * p.y;
+	r.z = a * p.z;
+	return r;
+}
+
+static V3
+operator+(V3 p1, V3 p2)
+{
+	V3 p = {};
+	p.x = p1.x + p2.x;
+	p.y = p1.y + p2.y;
+	p.z = p1.z + p2.z;
+	return p;
+}
+
 static bool
 func TurnsRight(V2 p0, V2 p1, V2 p2)
 {
@@ -130,13 +175,18 @@ func TurnsRight(V2 p0, V2 p1, V2 p2)
 	return turns_right;
 }
 
-struct Quad
+struct Quad2
 {
 	V2 p[4];
 };
 
+struct Quad3
+{
+	V3 p[4];
+};
+
 static bool
-func IsValidQuad(Quad q)
+func IsValidQuad2(Quad2 q)
 {
 	bool is_valid = true;
 	is_valid &= TurnsRight(q.p[0], q.p[1], q.p[2]);
@@ -147,7 +197,7 @@ func IsValidQuad(Quad q)
 }
 
 static bool
-func IsPointInQuad(V2 p, Quad q)
+func IsPointInQuad2(V2 p, Quad2 q)
 {
 	bool is_inside = true;
 	is_inside &= TurnsRight(q.p[0], q.p[1], p);
@@ -158,9 +208,9 @@ func IsPointInQuad(V2 p, Quad q)
 }
 
 static void
-func DrawQuad(Bitmap *bitmap, Quad quad, unsigned int color)
+func DrawQuad2(Bitmap *bitmap, Quad2 quad, unsigned int color)
 {
-	Assert(IsValidQuad(quad));
+	Assert(IsValidQuad2(quad));
 
 	float min_x = quad.p[0].x;
 	float max_x = quad.p[0].x;
@@ -180,11 +230,42 @@ func DrawQuad(Bitmap *bitmap, Quad quad, unsigned int color)
 	{
 		for(int col = (int)(min_x); col < (int)(max_x) + 1; col++)
 		{
-			V2 p = Point((float)col, (float)row);
-			if(IsPointInQuad(p, quad)) SetPixelColor(bitmap, row, col, color);
+			V2 p = Point2((float)col, (float)row);
+			if(IsPointInQuad2(p, quad)) SetPixelColor(bitmap, row, col, color);
 		}
 	}
 }
+
+static V2
+func ProjectToScreen(V3 p3)
+{
+	V2 p2 = Point2(p3.x, p3.y);
+	return p2;
+}
+
+static void
+func DrawQuad3(Bitmap *bitmap, Quad3 quad3, unsigned int color)
+{
+	Quad2 quad2 = {};
+	for(int i = 0; i < 4; i++)
+	{
+		quad2.p[i] = ProjectToScreen(quad3.p[i]);
+	}
+
+	if(IsValidQuad2(quad2)) DrawQuad2(bitmap, quad2, color);
+}
+
+enum CubeEdge
+{
+	CUBE_EDGE_LUF,
+	CUBE_EDGE_LUB,
+	CUBE_EDGE_LDF,
+	CUBE_EDGE_LDB,
+	CUBE_EDGE_RUF,
+	CUBE_EDGE_RUB,
+	CUBE_EDGE_RDF,
+	CUBE_EDGE_RDB
+};
 
 static void
 func DrawScene(Bitmap *bitmap)
@@ -200,38 +281,69 @@ func DrawScene(Bitmap *bitmap)
 		}
 	}
 
-	unsigned int quad_color = 0xFF0000;
+	V3 unit_cube_corners[8] = {};
+	unit_cube_corners[CUBE_EDGE_LUF] = Point3(-1.0, +1.0, +1.0f);
+	unit_cube_corners[CUBE_EDGE_LUB] = Point3(-1.0, +1.0, -1.0f);
+	unit_cube_corners[CUBE_EDGE_LDF] = Point3(-1.0, -1.0, +1.0f);
+	unit_cube_corners[CUBE_EDGE_LDB] = Point3(-1.0, -1.0, -1.0f);
+	unit_cube_corners[CUBE_EDGE_RUF] = Point3(+1.0, +1.0, +1.0f);
+	unit_cube_corners[CUBE_EDGE_RUB] = Point3(+1.0, +1.0, -1.0f);
+	unit_cube_corners[CUBE_EDGE_RDF] = Point3(+1.0, -1.0, +1.0f);
+	unit_cube_corners[CUBE_EDGE_RDB] = Point3(+1.0, -1.0, -1.0f);
+
+	int cube_face_corners[6][4] = 
+	{
+		{CUBE_EDGE_LUB, CUBE_EDGE_LUF, CUBE_EDGE_LDF, CUBE_EDGE_LDB},
+		{CUBE_EDGE_RUF, CUBE_EDGE_RUB, CUBE_EDGE_RDB, CUBE_EDGE_RDF},
+		{CUBE_EDGE_LUF, CUBE_EDGE_LUB, CUBE_EDGE_RUB, CUBE_EDGE_RUF},
+		{CUBE_EDGE_LDB, CUBE_EDGE_LDF, CUBE_EDGE_RDF, CUBE_EDGE_RDB},
+		{CUBE_EDGE_LUF, CUBE_EDGE_RUF, CUBE_EDGE_RDF, CUBE_EDGE_LDF},
+		{CUBE_EDGE_LUB, CUBE_EDGE_LDB, CUBE_EDGE_RDB, CUBE_EDGE_RUB}
+	};
+
+	unsigned int cube_face_colors[6] =
+	{
+		0xFF8800,
+		0xFF0000,
+		0xFFFFFF,
+		0xFFFF00,
+		0x00FF00,
+		0x0000FF
+	};
 
 	static float theta = 0.0f;
 	theta += 0.01f;
 
-	V2 center = Point(0.5f * (float)bitmap->width, 0.5f * (float)bitmap->height);
-	
-	V2 x_axis = Vector(cosf(theta), sinf(theta));
-	V2 y_axis = Vector(-sinf(theta), cosf(theta));
+	V3 screen_center = 0.5f * Point3((float)bitmap->width, (float)bitmap->height, 0.0f);
+	float side_radius = 50.0f;
 
-	float x_radius = 50.0f;
-	float y_radius = 80.0f;
+	V3 cube_corners[8] = {};
 
-	V2 p_x = x_radius * x_axis;
-	V2 p_y = y_radius * y_axis;
+	V3 x_axis = Vector3(1, 0, 0);
+	V3 y_axis = Vector3(0, cosf(theta), sinf(theta));
+	V3 z_axis = Vector3(0, -sinf(theta), cosf(theta));
 
-	Quad quad = {};
-	quad.p[0] = center - p_x + p_y;
-	quad.p[1] = center + p_x + p_y;
-	quad.p[2] = center + p_x - p_y;
-	quad.p[3] = center - p_x - p_y;
-	DrawQuad(bitmap, quad, quad_color);
-
-	/*
-	for(int row = bottom; row <= top; row++)
+	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
-		for(int col = left; col <= right; col++)
-		{
-			SetPixelColor(bitmap, row, col, rect_color);
-		}
+		cube_corners[corner_id] = 
+			screen_center + 
+			side_radius * unit_cube_corners[corner_id].x * x_axis +
+			side_radius * unit_cube_corners[corner_id].y * y_axis +
+			side_radius * unit_cube_corners[corner_id].z * z_axis;
 	}
-	*/
+
+	for(int face_id = 0; face_id < 6; face_id++)
+	{
+		Quad3 q3 = {};
+		for(int corner_id = 0; corner_id < 4; corner_id++)
+		{
+			int edge_id = cube_face_corners[face_id][corner_id];
+			q3.p[corner_id] = cube_corners[edge_id];
+		}
+
+		unsigned int color = cube_face_colors[face_id];
+		DrawQuad3(bitmap, q3, color);
+	}
 }
 
 int CALLBACK
