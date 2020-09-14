@@ -2,6 +2,8 @@
 
 #include <math.h>
 
+#define CUBE_N 3
+
 #define Assert(condition) if(!(condition)) DebugBreak();
 #define func
 
@@ -250,6 +252,16 @@ operator+(V3 p1, V3 p2)
 	return p;
 }
 
+static V3
+operator-(V3 p1, V3 p2)
+{
+	V3 p = {};
+	p.x = p1.x - p2.x;
+	p.y = p1.y - p2.y;
+	p.z = p1.z - p2.z;
+	return p;
+}
+
 struct M3x3
 {
 	float v[3][3];
@@ -470,20 +482,15 @@ enum CubeCorner
 	CORNER_RDB
 };
 
-static void
-func DrawScene(Bitmap *bitmap, V2 mouse_position)
+struct Cube
 {
-	unsigned int color = 0xAAAAAA;
-	unsigned int *pixel = bitmap->memory;
-	for(int row = 0; row < bitmap->height; row++)
-	{
-		for(int col = 0; col < bitmap->width; col++)
-		{
-			*pixel = color;
-			pixel++;
-		}
-	}
+	V3 center;
+	float radius;
+};
 
+static void
+func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
+{
 	V3 unit_cube_corners[8] = {};
 	unit_cube_corners[CORNER_LUF] = Point3(-1.0, +1.0, +1.0f);
 	unit_cube_corners[CORNER_LUB] = Point3(-1.0, +1.0, -1.0f);
@@ -526,31 +533,10 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 		0x0000FF
 	};
 
-	V3 screen_center = 0.5f * Point3((float)bitmap->width, (float)bitmap->height, 0.0f);
-	float side_radius = 100.0f;
-
-	static V2 prev_mouse_position;
-	static M3x3 transform = GetIdentityMatrix();
-
-	V2 mouse_position_diff = mouse_position - prev_mouse_position;
-
-	prev_mouse_position = mouse_position;
-
-	if(global_left_mouse_button_down)
-	{
-		float theta_y = mouse_position_diff.x / 100.0f;
-		M3x3 rotate_y = GetYAxisRotation(theta_y);
-
-		float theta_x = mouse_position_diff.y / 100.0f;
-		M3x3 rotate_x = GetXAxisRotation(theta_x);
-
-		transform = rotate_x * rotate_y * transform;
-	}
-
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
-		cube_corners[corner_id] = screen_center + side_radius * (transform * unit_cube_corners[corner_id]);
+		cube_corners[corner_id] = cube.center + cube.radius * (rotations * unit_cube_corners[corner_id]);
 	}
 
 	for(int face_id = 0; face_id < 6; face_id++)
@@ -566,7 +552,7 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 		DrawQuad3(bitmap, q3, color);
 	}
 
-	float min_corner_z = 0.0f;
+	float min_corner_z = cube_corners[0].z;
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
 		V3 corner = cube_corners[corner_id];
@@ -586,6 +572,107 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 		{
 			DrawLine3(bitmap, corner1, corner2, edge_color);
 		}
+	}
+}
+
+static bool
+func CubesAreInOrder(Cube first_cube, Cube second_cube)
+{
+	bool in_order = (first_cube.center.z < second_cube.center.z);
+	return in_order;
+}
+
+static void
+func SwapCubes(Cube *cube1, Cube *cube2)
+{
+	Cube tmp = *cube1;
+	*cube1 = *cube2;
+	*cube2 = tmp;
+}
+
+static void
+func SortCubesByZ(Cube *cubes, int cube_n)
+{
+	int i = 1;
+	while(i < cube_n)
+	{
+		int j = i;
+		while(j > 0 && !CubesAreInOrder(cubes[j - 1], cubes[j]))
+		{
+			SwapCubes(&cubes[j - 1], &cubes[j]);
+			j--;
+		}
+		i++;
+	}
+}
+
+static void
+func DrawScene(Bitmap *bitmap, V2 mouse_position)
+{
+	unsigned int color = 0xAAAAAA;
+	unsigned int *pixel = bitmap->memory;
+	for(int row = 0; row < bitmap->height; row++)
+	{
+		for(int col = 0; col < bitmap->width; col++)
+		{
+			*pixel = color;
+			pixel++;
+		}
+	}
+
+	static V2 prev_mouse_position;
+	static M3x3 transform = GetIdentityMatrix();
+
+	V2 mouse_position_diff = mouse_position - prev_mouse_position;
+
+	prev_mouse_position = mouse_position;
+
+	if(global_left_mouse_button_down)
+	{
+		float theta_y = mouse_position_diff.x / 100.0f;
+		M3x3 rotate_y = GetYAxisRotation(theta_y);
+
+		float theta_x = mouse_position_diff.y / 100.0f;
+		M3x3 rotate_x = GetXAxisRotation(theta_x);
+
+		transform = rotate_x * rotate_y * transform;
+	}
+
+	V3 screen_center = 0.5f * Point3((float)bitmap->width, (float)bitmap->height, 0.0f);
+	float side_radius = 100.0f;
+	float small_side_radius = side_radius / (float)CUBE_N;
+
+	Cube cubes[CUBE_N * CUBE_N * CUBE_N];
+	int cube_n = sizeof(cubes) / sizeof(cubes[0]);
+
+	int cube_id = 0;
+	for(int x = 0; x < CUBE_N; x++)
+	{
+		float x_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * x);
+		for(int y = 0; y < CUBE_N; y++)
+		{
+			float y_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * y);
+			for(int z = 0; z < CUBE_N; z++)
+			{
+				float z_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * z);
+
+				V3 offset = small_side_radius * Vector3(x_offset, y_offset, z_offset);
+				offset = transform * offset;
+
+				V3 center = screen_center + offset;
+				Cube *cube = &cubes[cube_id];
+				cube_id++;
+
+				cube->center = center;
+				cube->radius = small_side_radius;
+			}
+		}
+	}
+
+	SortCubesByZ(cubes, cube_n);
+	for(int i = 0; i < cube_n; i++) 
+	{
+		DrawCube(bitmap, cubes[i], transform);
 	}
 }
 
