@@ -164,6 +164,100 @@ operator+(V3 p1, V3 p2)
 	return p;
 }
 
+struct M3x3
+{
+	float v[3][3];
+};
+
+static M3x3
+func ColumnMatrix(V3 col1, V3 col2, V3 col3)
+{
+	M3x3 m = 
+	{
+		{
+			{col1.x, col2.x, col3.x},
+			{col1.y, col2.y, col3.y},
+			{col1.z, col2.z, col3.z}
+		}
+	};
+
+	return m;
+}
+
+static V3
+operator*(M3x3 m, V3 v)
+{
+	V3 r = {};
+	r.x = m.v[0][0] * v.x + m.v[0][1] * v.y + m.v[0][2] * v.z;
+	r.y = m.v[1][0] * v.x + m.v[1][1] * v.y + m.v[1][2] * v.z;
+	r.z = m.v[2][0] * v.x + m.v[2][1] * v.y + m.v[2][2] * v.z;
+	return r;
+}
+
+static M3x3
+operator*(M3x3 m1, M3x3 m2)
+{
+	M3x3 r = {};
+	for(int row = 0; row < 3; row++)
+	{
+		for(int col = 0; col < 3; col++)
+		{
+			r.v[row][col] = 0;
+			for(int i = 0; i < 3; i++)
+			{
+				r.v[row][col] += m1.v[row][i] * m2.v[i][col];
+			}
+		}
+	}
+
+	return r;
+}
+
+static M3x3
+func GetZAxisRotation(float theta)
+{
+	M3x3 m =
+	{
+		{
+			{cosf(theta), -sinf(theta), 0},
+			{sinf(theta),  cosf(theta), 0},
+			{           0,           0, 1}
+		}
+	};
+
+	return m;
+}
+
+static M3x3
+func GetYAxisRotation(float theta)
+{
+	M3x3 m =
+	{
+		{
+			{cosf(theta),  0, sinf(theta)},
+			{          0,  1,           0},
+			{-sinf(theta), 0, cosf(theta)}
+		}
+	};
+
+	return m;
+}
+
+static M3x3
+func GetXAxisRotation(float theta)
+{
+	M3x3 m =
+	{
+		{
+			{1,           0,           0},
+			{0, cosf(theta), -sinf(theta)},
+			{0, sinf(theta),  cosf(theta)}
+		}
+	};
+
+	return m;
+}
+
 static bool
 func TurnsRight(V2 p0, V2 p1, V2 p2)
 {
@@ -314,15 +408,29 @@ func DrawScene(Bitmap *bitmap)
 	static float theta = 0.0f;
 	theta += 0.01f;
 
+#ifndef M_PI
+	#define M_PI 3.141592653589797f
+#endif
+
+	if(theta > 2.0 * M_PI) theta -= 2.0f * M_PI;
+
 	V3 screen_center = 0.5f * Point3((float)bitmap->width, (float)bitmap->height, 0.0f);
 	float side_radius = 50.0f;
 
 	V3 cube_corners[8] = {};
 
-	V3 x_axis = Vector3(1, 0, 0);
-	V3 y_axis = Vector3(0, cosf(theta), sinf(theta));
-	V3 z_axis = Vector3(0, -sinf(theta), cosf(theta));
+	M3x3 transform_x = GetXAxisRotation(theta);
+	M3x3 transform_y = GetYAxisRotation(theta);
+	M3x3 transform_z = GetZAxisRotation(theta);
 
+	M3x3 transform = transform_x * transform_y * transform_z;
+
+	for(int corner_id = 0; corner_id < 8; corner_id++)
+	{
+		cube_corners[corner_id] = screen_center + side_radius * (transform * unit_cube_corners[corner_id]);
+	}
+
+	/*
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
 		cube_corners[corner_id] = 
@@ -331,6 +439,7 @@ func DrawScene(Bitmap *bitmap)
 			side_radius * unit_cube_corners[corner_id].y * y_axis +
 			side_radius * unit_cube_corners[corner_id].z * z_axis;
 	}
+	*/
 
 	for(int face_id = 0; face_id < 6; face_id++)
 	{
