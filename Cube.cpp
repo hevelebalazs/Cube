@@ -14,6 +14,7 @@ struct Bitmap
 
 static Bitmap global_bitmap;
 static bool global_running;
+static bool global_left_mouse_button_down;
 
 static void
 func ResizeBitmap(Bitmap *bitmap, int width, int height)
@@ -48,6 +49,16 @@ func WinCallback(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 		case WM_CLOSE:
 		{
 			global_running = false;
+			break;
+		}
+		case WM_LBUTTONDOWN:
+		{
+			global_left_mouse_button_down = true;
+			break;
+		}
+		case WM_LBUTTONUP:
+		{
+			global_left_mouse_button_down = false;
 			break;
 		}
 		default:
@@ -214,6 +225,21 @@ operator*(M3x3 m1, M3x3 m2)
 }
 
 static M3x3
+func GetIdentityMatrix()
+{
+	M3x3 m =
+	{
+		{
+			{1, 0, 0},
+			{0, 1, 0},
+			{0, 0, 1}
+		}
+	};
+
+	return m;
+}
+
+static M3x3
 func GetZAxisRotation(float theta)
 {
 	M3x3 m =
@@ -362,7 +388,7 @@ enum CubeEdge
 };
 
 static void
-func DrawScene(Bitmap *bitmap)
+func DrawScene(Bitmap *bitmap, V2 mouse_position)
 {
 	unsigned int color = 0xAAAAAA;
 	unsigned int *pixel = bitmap->memory;
@@ -405,41 +431,32 @@ func DrawScene(Bitmap *bitmap)
 		0x0000FF
 	};
 
-	static float theta = 0.0f;
-	theta += 0.01f;
-
-#ifndef M_PI
-	#define M_PI 3.141592653589797f
-#endif
-
-	if(theta > 2.0 * M_PI) theta -= 2.0f * M_PI;
-
 	V3 screen_center = 0.5f * Point3((float)bitmap->width, (float)bitmap->height, 0.0f);
-	float side_radius = 50.0f;
+	float side_radius = 100.0f;
+
+	static V2 prev_mouse_position;
+	static M3x3 transform = GetIdentityMatrix();
+
+	V2 mouse_position_diff = mouse_position - prev_mouse_position;
+
+	prev_mouse_position = mouse_position;
+
+	if(global_left_mouse_button_down)
+	{
+		float theta_y = mouse_position_diff.x / 100.0f;
+		M3x3 rotate_y = GetYAxisRotation(theta_y);
+
+		float theta_x = mouse_position_diff.y / 100.0f;
+		M3x3 rotate_x = GetXAxisRotation(theta_x);
+
+		transform = rotate_x * rotate_y * transform;
+	}
 
 	V3 cube_corners[8] = {};
-
-	M3x3 transform_x = GetXAxisRotation(theta);
-	M3x3 transform_y = GetYAxisRotation(theta);
-	M3x3 transform_z = GetZAxisRotation(theta);
-
-	M3x3 transform = transform_x * transform_y * transform_z;
-
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
 		cube_corners[corner_id] = screen_center + side_radius * (transform * unit_cube_corners[corner_id]);
 	}
-
-	/*
-	for(int corner_id = 0; corner_id < 8; corner_id++)
-	{
-		cube_corners[corner_id] = 
-			screen_center + 
-			side_radius * unit_cube_corners[corner_id].x * x_axis +
-			side_radius * unit_cube_corners[corner_id].y * y_axis +
-			side_radius * unit_cube_corners[corner_id].z * z_axis;
-	}
-	*/
 
 	for(int face_id = 0; face_id < 6; face_id++)
 	{
@@ -508,7 +525,13 @@ func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cm
 		int width = rect.right - rect.left;
 		int height = rect.bottom - rect.top;
 
-		DrawScene(bitmap);
+		POINT cursor_point = {};
+		GetCursorPos(&cursor_point);
+		ScreenToClient(window, &cursor_point);
+
+		V2 mouse_position = Point2((float)cursor_point.x, (float)cursor_point.y);
+
+		DrawScene(bitmap, mouse_position);
 
 		StretchDIBits(context,
 					  0, 0, bitmap->width, bitmap->height,
