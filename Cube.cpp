@@ -506,6 +506,16 @@ V3 unit_cube_corners[8] =
 	{+1.0, -1.0, -1.0f}
 };
 
+enum CubeFace
+{
+	FACE_L,
+	FACE_R,
+	FACE_U,
+	FACE_D,
+	FACE_F,
+	FACE_B
+};
+
 int cube_face_corners[6][4] = 
 {
 	{CORNER_LUB, CORNER_LUF, CORNER_LDF, CORNER_LDB},
@@ -545,20 +555,66 @@ struct Cube
 	float radius;
 };
 
-static unsigned int
-func AugmentColorWithCubeIndex(unsigned int color, int cube_index)
+static V3
+func GetCubeFaceNormalVector(int face_id)
 {
-	Assert(cube_index >= 0 && cube_index < 256);
+	V3 normal = {};
 
-	unsigned int result = color | (cube_index << 24);
+	switch(face_id)
+	{
+		case FACE_L:
+		{
+			normal = Vector3(-1, 0, 0);
+			break;
+		}
+		case FACE_R:
+		{
+			normal = Vector3(+1, 0, 0);
+			break;
+		}
+		case FACE_U:
+		{
+			normal = Vector3(0, +1, 0);
+			break;
+		}
+		case FACE_D:
+		{
+			normal = Vector3(0, -1, 0);
+			break;
+		}
+		case FACE_F:
+		{
+			normal = Vector3(0, 0, +1);
+			break;
+		}
+		case FACE_B:
+		{
+			normal = Vector3(0, 0, -1);
+			break;
+		}
+		default:
+		{
+			DebugBreak();
+		}
+	}
+
+	return normal;
+}
+
+static unsigned int
+func AugmentColor(unsigned int color, int augment_value)
+{
+	Assert(augment_value >= 0 && augment_value < 256);
+
+	unsigned int result = color | (augment_value << 24);
 	return result;
 }
 
 static int
-func GetCubeIndexFromAugmentedColor(unsigned int color)
+func GetColorAugmentValue(unsigned int color)
 {
-	int cube_index = (int)(color >> 24);
-	return cube_index;
+	int augment_value = (int)(color >> 24);
+	return augment_value;
 }
 
 static void
@@ -580,7 +636,10 @@ func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 		}
 
 		unsigned int color = cube_face_colors[face_id];
-		unsigned int augmented_color = AugmentColorWithCubeIndex(color, cube.id);
+
+		unsigned int cube_face_id = 6 * cube.id + face_id;
+		unsigned int augmented_color = AugmentColor(color, cube_face_id);
+
 		DrawQuad3(bitmap, q3, augmented_color);
 	}
 
@@ -607,10 +666,20 @@ func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 	}
 }
 
-static void
-func HighlightCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
+static V3
+func ShiftVector(V3 v)
 {
-	unsigned int color = 0x800000;
+	V3 r = {};
+	r.y = v.x;
+	r.z = v.y;
+	r.x = v.z;
+	return r;
+}
+
+static void
+func HighlightCubeFace(Bitmap *bitmap, Cube cube, M3x3 rotations, int face_id)
+{
+	unsigned int side_color = 0x800000;
 
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
@@ -618,17 +687,39 @@ func HighlightCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 		cube_corners[corner_id] = cube.center + cube.radius * (rotations * unit_cube_corners[corner_id]);
 	}
 
-	for(int face_id = 0; face_id < 6; face_id++)
+	Quad3 q3 = {};
+	for(int face_corner_id = 0; face_corner_id < 4; face_corner_id++)
 	{
-		Quad3 q3 = {};
-		for(int face_corner_id = 0; face_corner_id < 4; face_corner_id++)
-		{
-			int corner_id = cube_face_corners[face_id][face_corner_id];
-			q3.p[face_corner_id] = cube_corners[corner_id];
-		}
-
-		DrawQuad3(bitmap, q3, color);
+		int corner_id = cube_face_corners[face_id][face_corner_id];
+		q3.p[face_corner_id] = cube_corners[corner_id];
 	}
+
+	DrawQuad3(bitmap, q3, side_color);
+
+	unsigned int line_color = 0x400000;
+
+	V3 normal = GetCubeFaceNormalVector(face_id);
+
+	V3 p1 = cube.center + cube.radius * (rotations * normal);
+	V3 p2 = cube.center + (2.0f * cube.radius) * (rotations * normal);
+
+	DrawLine3(bitmap, p1, p2, line_color);
+
+	unsigned int rotation_line_color = 0xFF00FF;
+
+	V3 rotation_vector1 = ShiftVector(normal);
+	V3 rotation_vector2 = ShiftVector(rotation_vector1);
+
+	float rotation_line_length = (2.0f * cube.radius);
+
+	V3 rotation_line1_p1 = p1 - rotation_line_length * (rotations * rotation_vector1);
+	V3 rotation_line1_p2 = p1 + rotation_line_length * (rotations * rotation_vector1);
+
+	V3 rotation_line2_p1 = p1 - rotation_line_length * (rotations * rotation_vector2);
+	V3 rotation_line2_p2 = p1 + rotation_line_length * (rotations * rotation_vector2);
+
+	DrawLine3(bitmap, rotation_line1_p1, rotation_line1_p2, rotation_line_color);
+	DrawLine3(bitmap, rotation_line2_p1, rotation_line2_p2, rotation_line_color);
 }
 
 static bool
@@ -733,13 +824,15 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 		DrawCube(bitmap, cubes[i], transform);
 	}
 
-	unsigned int color_at_mouse = GetPixelColorChecked(bitmap, (int)mouse_position.y, (int)mouse_position.x);
-	unsigned int cube_index_at_mouse = GetCubeIndexFromAugmentedColor(color_at_mouse);
+	unsigned int picked_color = GetPixelColorChecked(bitmap, (int)mouse_position.y, (int)mouse_position.x);
+	int picked_cube_face_id = GetColorAugmentValue(picked_color);
+	int picked_cube_id = picked_cube_face_id / 6;
+	int picked_face_id = picked_cube_face_id % 6;
 
 	Cube *cube_at_mouse = 0;
 	for(int i = 0; i < cube_n; i++)
 	{
-		if(cubes[i].id == cube_index_at_mouse)
+		if(cubes[i].id == picked_cube_id)
 		{
 			cube_at_mouse = &cubes[i];
 		}
@@ -747,7 +840,7 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 
 	if(cube_at_mouse)
 	{
-		HighlightCube(bitmap, *cube_at_mouse, transform);
+		HighlightCubeFace(bitmap, *cube_at_mouse, transform, picked_face_id);
 	}
 }
 
