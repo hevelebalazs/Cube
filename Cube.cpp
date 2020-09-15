@@ -82,6 +82,18 @@ func SetPixelColor(Bitmap *bitmap, int row, int col, unsigned int color)
 	bitmap->memory[row * bitmap->width + col] = color;
 }
 
+static unsigned int
+func GetPixelColorChecked(Bitmap *bitmap, int row, int col)
+{
+	unsigned int color = 0;
+	if((row >= 0 && row < bitmap->height) && (col >= 0 && col < bitmap->width))
+	{
+		color = bitmap->memory[row * bitmap->width + col];
+	}
+
+	return color;
+}
+
 struct V2
 {
 	float x, y;
@@ -482,57 +494,76 @@ enum CubeCorner
 	CORNER_RDB
 };
 
+V3 unit_cube_corners[8] = 
+{
+	{-1.0, +1.0, +1.0f},
+	{-1.0, +1.0, -1.0f},
+	{-1.0, -1.0, +1.0f},
+	{-1.0, -1.0, -1.0f},
+	{+1.0, +1.0, +1.0f},
+	{+1.0, +1.0, -1.0f},
+	{+1.0, -1.0, +1.0f},
+	{+1.0, -1.0, -1.0f}
+};
+
+int cube_face_corners[6][4] = 
+{
+	{CORNER_LUB, CORNER_LUF, CORNER_LDF, CORNER_LDB},
+	{CORNER_RUF, CORNER_RUB, CORNER_RDB, CORNER_RDF},
+	{CORNER_LUF, CORNER_LUB, CORNER_RUB, CORNER_RUF},
+	{CORNER_LDB, CORNER_LDF, CORNER_RDF, CORNER_RDB},
+	{CORNER_LUF, CORNER_RUF, CORNER_RDF, CORNER_LDF},
+	{CORNER_LUB, CORNER_LDB, CORNER_RDB, CORNER_RUB}
+};
+
+int cube_edges[12][2] = 
+{
+	{CORNER_LUF, CORNER_RUF}, {CORNER_RUF, CORNER_RUB}, 
+	{CORNER_RUB, CORNER_LUB}, {CORNER_LUB, CORNER_LUF},
+		
+	{CORNER_LDF, CORNER_RDF}, {CORNER_RDF, CORNER_RDB}, 
+	{CORNER_RDB, CORNER_LDB}, {CORNER_LDB, CORNER_LDF},
+
+	{CORNER_LUF, CORNER_LDF}, {CORNER_RUF, CORNER_RDF},
+	{CORNER_LUB, CORNER_LDB}, {CORNER_RUB, CORNER_RDB}
+};
+
+unsigned int cube_face_colors[6] =
+{
+	0xFF8800,
+	0xFF0000,
+	0xFFFFFF,
+	0xFFFF00,
+	0x00FF00,
+	0x0000FF
+};
+
 struct Cube
 {
 	V3 center;
+	int id;
 	float radius;
 };
+
+static unsigned int
+func AugmentColorWithCubeIndex(unsigned int color, int cube_index)
+{
+	Assert(cube_index >= 0 && cube_index < 256);
+
+	unsigned int result = color | (cube_index << 24);
+	return result;
+}
+
+static int
+func GetCubeIndexFromAugmentedColor(unsigned int color)
+{
+	int cube_index = (int)(color >> 24);
+	return cube_index;
+}
 
 static void
 func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 {
-	V3 unit_cube_corners[8] = {};
-	unit_cube_corners[CORNER_LUF] = Point3(-1.0, +1.0, +1.0f);
-	unit_cube_corners[CORNER_LUB] = Point3(-1.0, +1.0, -1.0f);
-	unit_cube_corners[CORNER_LDF] = Point3(-1.0, -1.0, +1.0f);
-	unit_cube_corners[CORNER_LDB] = Point3(-1.0, -1.0, -1.0f);
-	unit_cube_corners[CORNER_RUF] = Point3(+1.0, +1.0, +1.0f);
-	unit_cube_corners[CORNER_RUB] = Point3(+1.0, +1.0, -1.0f);
-	unit_cube_corners[CORNER_RDF] = Point3(+1.0, -1.0, +1.0f);
-	unit_cube_corners[CORNER_RDB] = Point3(+1.0, -1.0, -1.0f);
-
-	int cube_face_corners[6][4] = 
-	{
-		{CORNER_LUB, CORNER_LUF, CORNER_LDF, CORNER_LDB},
-		{CORNER_RUF, CORNER_RUB, CORNER_RDB, CORNER_RDF},
-		{CORNER_LUF, CORNER_LUB, CORNER_RUB, CORNER_RUF},
-		{CORNER_LDB, CORNER_LDF, CORNER_RDF, CORNER_RDB},
-		{CORNER_LUF, CORNER_RUF, CORNER_RDF, CORNER_LDF},
-		{CORNER_LUB, CORNER_LDB, CORNER_RDB, CORNER_RUB}
-	};
-
-	int cube_edges[12][2] = 
-	{
-		{CORNER_LUF, CORNER_RUF}, {CORNER_RUF, CORNER_RUB}, 
-		{CORNER_RUB, CORNER_LUB}, {CORNER_LUB, CORNER_LUF},
-		
-		{CORNER_LDF, CORNER_RDF}, {CORNER_RDF, CORNER_RDB}, 
-		{CORNER_RDB, CORNER_LDB}, {CORNER_LDB, CORNER_LDF},
-
-		{CORNER_LUF, CORNER_LDF}, {CORNER_RUF, CORNER_RDF},
-		{CORNER_LUB, CORNER_LDB}, {CORNER_RUB, CORNER_RDB}
-	};
-
-	unsigned int cube_face_colors[6] =
-	{
-		0xFF8800,
-		0xFF0000,
-		0xFFFFFF,
-		0xFFFF00,
-		0x00FF00,
-		0x0000FF
-	};
-
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
@@ -549,7 +580,8 @@ func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 		}
 
 		unsigned int color = cube_face_colors[face_id];
-		DrawQuad3(bitmap, q3, color);
+		unsigned int augmented_color = AugmentColorWithCubeIndex(color, cube.id);
+		DrawQuad3(bitmap, q3, augmented_color);
 	}
 
 	float min_corner_z = cube_corners[0].z;
@@ -572,6 +604,30 @@ func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 		{
 			DrawLine3(bitmap, corner1, corner2, edge_color);
 		}
+	}
+}
+
+static void
+func HighlightCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
+{
+	unsigned int color = 0x800000;
+
+	V3 cube_corners[8] = {};
+	for(int corner_id = 0; corner_id < 8; corner_id++)
+	{
+		cube_corners[corner_id] = cube.center + cube.radius * (rotations * unit_cube_corners[corner_id]);
+	}
+
+	for(int face_id = 0; face_id < 6; face_id++)
+	{
+		Quad3 q3 = {};
+		for(int face_corner_id = 0; face_corner_id < 4; face_corner_id++)
+		{
+			int corner_id = cube_face_corners[face_id][face_corner_id];
+			q3.p[face_corner_id] = cube_corners[corner_id];
+		}
+
+		DrawQuad3(bitmap, q3, color);
 	}
 }
 
@@ -632,7 +688,7 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 		float theta_y = mouse_position_diff.x / 100.0f;
 		M3x3 rotate_y = GetYAxisRotation(theta_y);
 
-		float theta_x = mouse_position_diff.y / 100.0f;
+		float theta_x = (-mouse_position_diff.y) / 100.0f;
 		M3x3 rotate_x = GetXAxisRotation(theta_x);
 
 		transform = rotate_x * rotate_y * transform;
@@ -663,6 +719,8 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 				Cube *cube = &cubes[cube_id];
 				cube_id++;
 
+				cube->id = cube_id;
+
 				cube->center = center;
 				cube->radius = small_side_radius;
 			}
@@ -673,6 +731,23 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 	for(int i = 0; i < cube_n; i++) 
 	{
 		DrawCube(bitmap, cubes[i], transform);
+	}
+
+	unsigned int color_at_mouse = GetPixelColorChecked(bitmap, (int)mouse_position.y, (int)mouse_position.x);
+	unsigned int cube_index_at_mouse = GetCubeIndexFromAugmentedColor(color_at_mouse);
+
+	Cube *cube_at_mouse = 0;
+	for(int i = 0; i < cube_n; i++)
+	{
+		if(cubes[i].id == cube_index_at_mouse)
+		{
+			cube_at_mouse = &cubes[i];
+		}
+	}
+
+	if(cube_at_mouse)
+	{
+		HighlightCube(bitmap, *cube_at_mouse, transform);
 	}
 }
 
@@ -733,7 +808,7 @@ func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cm
 		GetCursorPos(&cursor_point);
 		ScreenToClient(window, &cursor_point);
 
-		V2 mouse_position = Point2((float)cursor_point.x, (float)cursor_point.y);
+		V2 mouse_position = Point2((float)cursor_point.x, (float)(height - cursor_point.y));
 
 		DrawScene(bitmap, mouse_position);
 
