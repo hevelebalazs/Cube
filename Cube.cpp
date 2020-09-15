@@ -598,8 +598,9 @@ unsigned int cube_face_colors[6] =
 
 struct Cube
 {
+	M3x3 rotations;
 	V3 center_base;
-	V3 center;
+	V3 center_final;
 	int id;
 	float radius;
 	bool is_rotating;
@@ -687,7 +688,8 @@ func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
-		cube_corners[corner_id] = cube.center + cube.radius * (rotations * unit_cube_corners[corner_id]);
+		cube_corners[corner_id] = cube.center_final +
+			cube.radius * (rotations * (cube.rotations * unit_cube_corners[corner_id]));
 	}
 
 	for(int face_id = 0; face_id < 6; face_id++)
@@ -773,7 +775,7 @@ func HighlightCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
-		cube_corners[corner_id] = cube.center + cube.radius * (rotations * unit_cube_corners[corner_id]);
+		cube_corners[corner_id] = cube.center_final + cube.radius * (rotations * unit_cube_corners[corner_id]);
 	}
 
 	for(int face_id = 0; face_id < 6; face_id++)
@@ -789,6 +791,7 @@ func HighlightCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 	}
 }
 
+/*
 static void
 func HighlightCubeFace(Bitmap *bitmap, Cube cube, M3x3 rotations, int face_id)
 {
@@ -797,7 +800,7 @@ func HighlightCubeFace(Bitmap *bitmap, Cube cube, M3x3 rotations, int face_id)
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
-		cube_corners[corner_id] = cube.center + cube.radius * (rotations * unit_cube_corners[corner_id]);
+		cube_corners[corner_id] = cube.center_final + cube.radius * (rotations * unit_cube_corners[corner_id]);
 	}
 
 	Quad3 q3 = {};
@@ -813,8 +816,8 @@ func HighlightCubeFace(Bitmap *bitmap, Cube cube, M3x3 rotations, int face_id)
 
 	V3 normal = GetCubeFaceNormalVector(face_id);
 
-	V3 p1 = cube.center + cube.radius * (rotations * normal);
-	V3 p2 = cube.center + (2.0f * cube.radius) * (rotations * normal);
+	V3 p1 = cube.center_final + cube.radius * (rotations * normal);
+	V3 p2 = cube.center_final + (2.0f * cube.radius) * (rotations * normal);
 
 	DrawLine3(bitmap, p1, p2, line_color);
 
@@ -834,11 +837,12 @@ func HighlightCubeFace(Bitmap *bitmap, Cube cube, M3x3 rotations, int face_id)
 	DrawLine3(bitmap, rotation_line1_p1, rotation_line1_p2, rotation_line_color);
 	DrawLine3(bitmap, rotation_line2_p1, rotation_line2_p2, rotation_line_color);
 }
+*/
 
 static bool
 func CubesAreInOrder(Cube first_cube, Cube second_cube)
 {
-	bool in_order = (first_cube.center.z < second_cube.center.z);
+	bool in_order = (first_cube.center_final.z < second_cube.center_final.z);
 	return in_order;
 }
 
@@ -866,8 +870,97 @@ func SortCubesByZ(Cube *cubes, int cube_n)
 	}
 }
 
+struct BigCube
+{
+	M3x3 rotations;
+
+	Cube cubes[CUBE_N * CUBE_N * CUBE_N];
+	int cube_n;
+};
+
+static BigCube
+func InitBigCube()
+{
+	float side_radius = 100.0f;
+	float small_side_radius = side_radius / (float)CUBE_N;
+
+	BigCube big_cube = {};
+	big_cube.cube_n = sizeof(big_cube.cubes) / sizeof(big_cube.cubes[0]);
+	big_cube.rotations = GetIdentityMatrix();
+
+	int cube_id = 0;
+	for(int x = 0; x < CUBE_N; x++)
+	{
+		float x_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * x);
+		for(int y = 0; y < CUBE_N; y++)
+		{
+			float y_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * y);
+			for(int z = 0; z < CUBE_N; z++)
+			{
+				float z_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * z);
+
+				V3 offset_base = small_side_radius * Vector3(x_offset, y_offset, z_offset);
+
+				Cube *cube = &big_cube.cubes[cube_id];
+				cube_id++;
+
+				cube->id = cube_id;
+
+				cube->rotations = GetIdentityMatrix();
+				cube->center_base = offset_base;
+				cube->radius = small_side_radius;
+			}
+		}
+	}
+
+	return big_cube;
+}
+
+static M3x3
+func NormalizeMatrixValues(M3x3 m)
+{
+	M3x3 r = {};
+	for(int row = 0; row < 3; row++)
+	{
+		for(int col = 0; col < 3; col++)
+		{
+			float m_value = m.v[row][col];
+			float r_value = 0.0f;
+			if(m_value < -0.5f) r_value = -1.0f;
+			if(m_value > +0.5f) r_value = +1.0f;
+
+			r.v[row][col] = r_value;
+		}
+	}
+
+	return r;
+}
+
+static float 
+func RoundToHalfPi(float x)
+{
+	float half_pi = 0.5f * 3.141592653589793238462643383f;
+	float rounded_x = x;
+
+	int times = (int)(x / half_pi);
+
+	float low = (float)times * half_pi;
+	if(x < 0) low -= half_pi;
+
+	float high = low + half_pi;
+	Assert(low <= x);
+	Assert(x <= high);
+
+	float low_abs = x - low;
+	float high_abs = high - x;
+	if(low_abs < high_abs) rounded_x = low;
+	else rounded_x = high;
+
+	return rounded_x;
+}
+
 static void
-func DrawScene(Bitmap *bitmap, V2 mouse_position)
+func DrawScene(Bitmap *bitmap, BigCube *big_cube, V2 mouse_position)
 {
 	static bool is_rotating = false;
 	static bool big_cube_rotation = false;
@@ -894,7 +987,6 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 	}
 
 	static V2 prev_mouse_position;
-	static M3x3 transform = GetIdentityMatrix();
 
 	V2 mouse_position_diff = mouse_position - prev_mouse_position;
 
@@ -908,42 +1000,19 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 		float theta_x = (-mouse_position_diff.y) / 100.0f;
 		M3x3 rotate_x = GetXAxisRotation(theta_x);
 
-		transform = rotate_x * rotate_y * transform;
+		big_cube->rotations = rotate_x * rotate_y * big_cube->rotations;
 	}
 
 	V3 screen_center = 0.5f * Point3((float)bitmap->width, (float)bitmap->height, 0.0f);
-	float side_radius = 100.0f;
-	float small_side_radius = side_radius / (float)CUBE_N;
-
-	Cube cubes[CUBE_N * CUBE_N * CUBE_N];
-	int cube_n = sizeof(cubes) / sizeof(cubes[0]);
-
-	int cube_id = 0;
-	for(int x = 0; x < CUBE_N; x++)
+	for(int i = 0; i < big_cube->cube_n; i++)
 	{
-		float x_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * x);
-		for(int y = 0; y < CUBE_N; y++)
-		{
-			float y_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * y);
-			for(int z = 0; z < CUBE_N; z++)
-			{
-				float z_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * z);
+		Cube *cube = &big_cube->cubes[i];
+		cube->center_final = screen_center + big_cube->rotations * cube->center_base;
+	}
 
-				V3 offset_base = small_side_radius * Vector3(x_offset, y_offset, z_offset);
-
-				V3 offset = transform * offset_base;
-
-				V3 center = screen_center + offset;
-				Cube *cube = &cubes[cube_id];
-				cube_id++;
-
-				cube->id = cube_id;
-
-				cube->center_base = offset_base;
-				cube->center = center;
-				cube->radius = small_side_radius;
-			}
-		}
+	for(int i = 0; i < big_cube->cube_n; i++)
+	{
+		big_cube->cubes[i].is_rotating = false;
 	}
 
 	M3x3 side_rotation = GetIdentityMatrix();
@@ -964,51 +1033,73 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 		V3 rotation_vector_base = use_rotation1 ? rotation1_vector : rotation2_vector;
 		V3 rotation_perp_vector_base = use_rotation1 ? rotation2_vector : -rotation1_vector;
 
-		V3 rotation_vector = transform * rotation_vector_base;
-		V3 rotation_perp_vector = transform * rotation_perp_vector_base;
+		V3 rotation_vector = big_cube->rotations * rotation_vector_base;
+		V3 rotation_perp_vector = big_cube->rotations * rotation_perp_vector_base;
 
 		float rotation_distance = use_rotation1 ? rotation1_distance : rotation2_distance;
-		float theta = rotation_distance / 100.0f;
-
+		float theta = rotation_distance / 50.0f;
+		
 		side_rotation = GetRotationAroundAxis(rotation_perp_vector_base, theta);
 	
 		Cube *rotating_cube = 0;
-		for(int i = 0; i < cube_n; i++)
+		for(int i = 0; i < big_cube->cube_n; i++)
 		{
-			if(cubes[i].id == rotating_cube_id) rotating_cube = &cubes[i];
+			if(big_cube->cubes[i].id == rotating_cube_id) rotating_cube = &big_cube->cubes[i];
 		}
 		Assert(rotating_cube);
 
 		float cube_radius = rotating_cube->radius;
 
-		float base_perp_distance = Dot3(rotating_cube->center, rotation_perp_vector);
-		for(int i = 0; i < cube_n; i++)
+		float base_perp_distance = Dot3(rotating_cube->center_final, rotation_perp_vector);
+		for(int i = 0; i < big_cube->cube_n; i++)
 		{
-			float perp_distance = Dot3(cubes[i].center, rotation_perp_vector);
+			Cube *cube = &big_cube->cubes[i];
+			float perp_distance = Dot3(cube->center_final, rotation_perp_vector);
 			if(Abs(perp_distance - base_perp_distance) < cube_radius)
 			{
-				cubes[i].is_rotating = true;
-				cubes[i].center_base = side_rotation * cubes[i].center_base;
-				cubes[i].center = screen_center + transform * cubes[i].center_base;
+				cube->is_rotating = true;
+				V3 center_base_rotated = side_rotation * cube->center_base;
+				cube->center_final = screen_center + big_cube->rotations * center_base_rotated;
 			}
 			else
 			{
-				cubes[i].is_rotating = false;
+				cube->is_rotating = false;
 			}
+		}
+		
+		if(!global_left_mouse_button_down)
+		{
+			float rounded_theta = RoundToHalfPi(theta);
+			M3x3 rotation_to_apply = GetRotationAroundAxis(rotation_perp_vector_base, rounded_theta);
+			rotation_to_apply = NormalizeMatrixValues(rotation_to_apply);
+			for(int i = 0; i < big_cube->cube_n; i++)
+			{
+				Cube *cube = &big_cube->cubes[i];
+				if(cube->is_rotating)
+				{
+					cube->rotations = rotation_to_apply * cube->rotations;
+					cube->center_base = rotation_to_apply * cube->center_base;
+					cube->is_rotating = false;
+				}
+			}
+
+			side_rotation = GetIdentityMatrix();
+			is_rotating = false;
 		}
 	}
 
-	M3x3 side_rotation_transform = transform * side_rotation;
+	SortCubesByZ(big_cube->cubes, big_cube->cube_n);
 
-	SortCubesByZ(cubes, cube_n);
-
-	for(int i = 0; i < cube_n; i++) 
+	M3x3 side_rotation_transform = big_cube->rotations * side_rotation;
+	for(int i = 0; i < big_cube->cube_n; i++) 
 	{
-		M3x3 cube_transform = transform;
+		Cube cube = big_cube->cubes[i];
 
-		if(cubes[i].is_rotating) cube_transform = side_rotation_transform;
+		M3x3 cube_transform = big_cube->rotations;
 
-		DrawCube(bitmap, cubes[i], cube_transform);
+		if(cube.is_rotating) cube_transform = side_rotation_transform;
+
+		DrawCube(bitmap, cube, cube_transform);
 	}
 
 	unsigned int picked_color = GetPixelColorChecked(bitmap, (int)mouse_position.y, (int)mouse_position.x);
@@ -1017,11 +1108,11 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 	int picked_face_id = picked_cube_face_id % 6;
 
 	Cube *cube_at_mouse = 0;
-	for(int i = 0; i < cube_n; i++)
+	for(int i = 0; i < big_cube->cube_n; i++)
 	{
-		if(cubes[i].id == picked_cube_id)
+		if(big_cube->cubes[i].id == picked_cube_id)
 		{
-			cube_at_mouse = &cubes[i];
+			cube_at_mouse = &big_cube->cubes[i];
 		}
 	}
 
@@ -1045,7 +1136,7 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 			clicked_pixel = mouse_position;
 
 			float rotation_line_length = cube_at_mouse->radius;
-			V3 face_normal = GetCubeFaceNormalVector(rotating_face_id);
+			V3 face_normal = cube_at_mouse->rotations * GetCubeFaceNormalVector(rotating_face_id);
 
 			rotation1_vector = ShiftVector(face_normal);
 			rotation2_vector = ShiftVector(rotation1_vector);
@@ -1056,8 +1147,8 @@ func DrawScene(Bitmap *bitmap, V2 mouse_position)
 			}
 			Assert(IsRightHandedSystem(face_normal, rotation1_vector, rotation2_vector));
 
-			rotation1_vector_pixel = ProjectToScreen(transform * rotation1_vector);
-			rotation2_vector_pixel = ProjectToScreen(transform * rotation2_vector);
+			rotation1_vector_pixel = ProjectToScreen(big_cube->rotations * rotation1_vector);
+			rotation2_vector_pixel = ProjectToScreen(big_cube->rotations * rotation2_vector);
 		}
 	}
 }
@@ -1087,6 +1178,8 @@ func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cm
 		0
 	);
 	Assert(window != 0);
+
+	BigCube big_cube = InitBigCube();
 
 	Bitmap *bitmap = &global_bitmap;
 	global_running = true;
@@ -1121,7 +1214,7 @@ func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cm
 
 		V2 mouse_position = Point2((float)cursor_point.x, (float)(height - cursor_point.y));
 
-		DrawScene(bitmap, mouse_position);
+		DrawScene(bitmap, &big_cube, mouse_position);
 
 		StretchDIBits(context,
 					  0, 0, bitmap->width, bitmap->height,
