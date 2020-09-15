@@ -891,13 +891,13 @@ func InitBigCube()
 	int cube_id = 0;
 	for(int x = 0; x < CUBE_N; x++)
 	{
-		float x_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * x);
+		float x_offset = (-CUBE_N + 1.0f) + (2.0f * x);
 		for(int y = 0; y < CUBE_N; y++)
 		{
-			float y_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * y);
+			float y_offset = (-CUBE_N + 1.0f) + (2.0f * y);
 			for(int z = 0; z < CUBE_N; z++)
 			{
-				float z_offset = -(0.5f * CUBE_N + 0.5f) + (2.0f * z);
+				float z_offset = (-CUBE_N + 1.0f) + (2.0f * z);
 
 				V3 offset_base = small_side_radius * Vector3(x_offset, y_offset, z_offset);
 
