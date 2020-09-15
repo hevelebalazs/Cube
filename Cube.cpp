@@ -2,32 +2,35 @@
 
 #include <math.h>
 
-#define CUBE_N 3
+#define CUBE_N 4
 
 #define Assert(condition) if(!(condition)) DebugBreak();
 #define func
 
-struct Bitmap
+struct Buffer
 {
-	unsigned int *memory;
+	unsigned int *colors;
+	unsigned int *cube_face_ids;
 	int width;
 	int height;
 };
 
-static Bitmap global_bitmap;
+static Buffer global_buffer;
 static bool global_running;
 static bool global_left_mouse_button_down;
 static bool global_right_mouse_button_down;
 
 static void
-func ResizeBitmap(Bitmap *bitmap, int width, int height)
+func ResizeBuffer(Buffer *buffer, int width, int height)
 {
-	delete bitmap->memory;
+	delete buffer->colors;
+	delete buffer->cube_face_ids;
 
-	bitmap->width = width;
-	bitmap->height = height;
+	buffer->width = width;
+	buffer->height = height;
 
-	bitmap->memory = new unsigned int[width * height];
+	buffer->colors = new unsigned int[width * height];
+	buffer->cube_face_ids = new unsigned int[width * height];
 }
 
 static LRESULT CALLBACK
@@ -44,7 +47,7 @@ func WinCallback(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 			int width = rect.right - rect.left;
 			int height = rect.bottom - rect.top;
 
-			ResizeBitmap(&global_bitmap, width, height);
+			ResizeBuffer(&global_buffer, width, height);
 
 			break;
 		}
@@ -85,24 +88,45 @@ func WinCallback(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 }
 
 static void
-func SetPixelColor(Bitmap *bitmap, int row, int col, unsigned int color)
+func SetPixelColor(Buffer *buffer, int row, int col, unsigned int color)
 {
-	Assert(row >= 0 && row < bitmap->height);
-	Assert(col >= 0 && col < bitmap->width);
+	Assert(row >= 0 && row < buffer->height);
+	Assert(col >= 0 && col < buffer->width);
 
-	bitmap->memory[row * bitmap->width + col] = color;
+	buffer->colors[row * buffer->width + col] = color;
+}
+
+static void
+func SetPixelCubeFaceId(Buffer *buffer, int row, int col, unsigned int cube_face_id)
+{
+	Assert(row >= 0 && row < buffer->height);
+	Assert(col >= 0 && col < buffer->width);
+
+	buffer->cube_face_ids[row * buffer->width + col] = cube_face_id;
 }
 
 static unsigned int
-func GetPixelColorChecked(Bitmap *bitmap, int row, int col)
+func GetPixelColorChecked(Buffer *buffer, int row, int col)
 {
 	unsigned int color = 0;
-	if((row >= 0 && row < bitmap->height) && (col >= 0 && col < bitmap->width))
+	if((row >= 0 && row < buffer->height) && (col >= 0 && col < buffer->width))
 	{
-		color = bitmap->memory[row * bitmap->width + col];
+		color = buffer->colors[row * buffer->width + col];
 	}
 
 	return color;
+}
+
+static unsigned int
+func GetPixelCubeFaceIdChecked(Buffer *buffer, int row, int col)
+{
+	unsigned int cube_face_id = 0;
+	if((row >= 0 && row < buffer->height) && (col >= 0 && col < buffer->width))
+	{
+		cube_face_id = buffer->cube_face_ids[row * buffer->width + col];
+	}
+
+	return cube_face_id;
 }
 
 struct V2
@@ -170,12 +194,12 @@ func BresenhamAdvance(BresenhamContext *context)
 }
 
 static void
-func Bresenham(Bitmap *bitmap, V2 p1, V2 p2, unsigned int color)
+func Bresenham(Buffer *buffer, V2 p1, V2 p2, unsigned int color)
 {
 	BresenhamContext context = BresenhamInit(p1, p2);
 	while(1)
 	{
-		SetPixelColor(bitmap, context.y1, context.x1, color);
+		SetPixelColor(buffer, context.y1, context.x1, color);
 		if(context.x1 == context.x2 && context.y1 == context.y2)
 		{
 			break;
@@ -475,7 +499,7 @@ func IsPointInQuad2(V2 p, Quad2 q)
 }
 
 static void
-func DrawQuad2(Bitmap *bitmap, Quad2 quad, unsigned int color)
+func DrawQuad2(Buffer *buffer, Quad2 quad, unsigned int color, unsigned int cube_face_id)
 {
 	Assert(IsValidQuad2(quad));
 
@@ -498,7 +522,11 @@ func DrawQuad2(Bitmap *bitmap, Quad2 quad, unsigned int color)
 		for(int col = (int)(min_x); col < (int)(max_x) + 1; col++)
 		{
 			V2 p = Point2((float)col, (float)row);
-			if(IsPointInQuad2(p, quad)) SetPixelColor(bitmap, row, col, color);
+			if(IsPointInQuad2(p, quad))
+			{
+				SetPixelColor(buffer, row, col, color);
+				SetPixelCubeFaceId(buffer, row, col, cube_face_id);
+			}
 		}
 	}
 }
@@ -511,15 +539,15 @@ func ProjectToScreen(V3 p3)
 }
 
 static void
-func DrawLine3(Bitmap *bitmap, V3 p1, V3 p2, unsigned int color)
+func DrawLine3(Buffer *buffer, V3 p1, V3 p2, unsigned int color)
 {
 	V2 p1_projected = ProjectToScreen(p1);
 	V2 p2_projected = ProjectToScreen(p2);
-	Bresenham(bitmap, p1_projected, p2_projected, color);
+	Bresenham(buffer, p1_projected, p2_projected, color);
 }
 
 static void
-func DrawQuad3(Bitmap *bitmap, Quad3 quad3, unsigned int color)
+func DrawQuad3(Buffer *buffer, Quad3 quad3, unsigned int color, unsigned int cube_face_id)
 {
 	Quad2 quad2 = {};
 	for(int i = 0; i < 4; i++)
@@ -527,7 +555,7 @@ func DrawQuad3(Bitmap *bitmap, Quad3 quad3, unsigned int color)
 		quad2.p[i] = ProjectToScreen(quad3.p[i]);
 	}
 
-	if(IsValidQuad2(quad2)) DrawQuad2(bitmap, quad2, color);
+	if(IsValidQuad2(quad2)) DrawQuad2(buffer, quad2, color, cube_face_id);
 }
 
 enum CubeCorner
@@ -666,24 +694,8 @@ func Dot3(V3 v1, V3 v2)
 	return prod;
 }
 
-static unsigned int
-func AugmentColor(unsigned int color, int augment_value)
-{
-	Assert(augment_value >= 0 && augment_value < 256);
-
-	unsigned int result = color | (augment_value << 24);
-	return result;
-}
-
-static int
-func GetColorAugmentValue(unsigned int color)
-{
-	int augment_value = (int)(color >> 24);
-	return augment_value;
-}
-
 static void
-func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
+func DrawCube(Buffer *buffer, Cube cube, M3x3 rotations)
 {
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
@@ -702,11 +714,8 @@ func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 		}
 
 		unsigned int color = cube_face_colors[face_id];
-
 		unsigned int cube_face_id = 6 * cube.id + face_id;
-		unsigned int augmented_color = AugmentColor(color, cube_face_id);
-
-		DrawQuad3(bitmap, q3, augmented_color);
+		DrawQuad3(buffer, q3, color, cube_face_id);
 	}
 
 	float min_corner_z = cube_corners[0].z;
@@ -727,7 +736,7 @@ func DrawCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
 
 		if(corner1.z > min_corner_z && corner2.z > min_corner_z)
 		{
-			DrawLine3(bitmap, corner1, corner2, edge_color);
+			DrawLine3(buffer, corner1, corner2, edge_color);
 		}
 	}
 }
@@ -766,78 +775,6 @@ func ShiftVector(V3 v)
 	r.x = v.z;
 	return r;
 }
-
-static void
-func HighlightCube(Bitmap *bitmap, Cube cube, M3x3 rotations)
-{
-	unsigned int color = 0x800000;
-
-	V3 cube_corners[8] = {};
-	for(int corner_id = 0; corner_id < 8; corner_id++)
-	{
-		cube_corners[corner_id] = cube.center_final + cube.radius * (rotations * unit_cube_corners[corner_id]);
-	}
-
-	for(int face_id = 0; face_id < 6; face_id++)
-	{
-		Quad3 q3 = {};
-		for(int face_corner_id = 0; face_corner_id < 4; face_corner_id++)
-		{
-			int corner_id = cube_face_corners[face_id][face_corner_id];
-			q3.p[face_corner_id] = cube_corners[corner_id];
-		}
-
-		DrawQuad3(bitmap, q3, color);
-	}
-}
-
-/*
-static void
-func HighlightCubeFace(Bitmap *bitmap, Cube cube, M3x3 rotations, int face_id)
-{
-	unsigned int side_color = 0x800000;
-
-	V3 cube_corners[8] = {};
-	for(int corner_id = 0; corner_id < 8; corner_id++)
-	{
-		cube_corners[corner_id] = cube.center_final + cube.radius * (rotations * unit_cube_corners[corner_id]);
-	}
-
-	Quad3 q3 = {};
-	for(int face_corner_id = 0; face_corner_id < 4; face_corner_id++)
-	{
-		int corner_id = cube_face_corners[face_id][face_corner_id];
-		q3.p[face_corner_id] = cube_corners[corner_id];
-	}
-
-	DrawQuad3(bitmap, q3, side_color);
-
-	unsigned int line_color = 0x400000;
-
-	V3 normal = GetCubeFaceNormalVector(face_id);
-
-	V3 p1 = cube.center_final + cube.radius * (rotations * normal);
-	V3 p2 = cube.center_final + (2.0f * cube.radius) * (rotations * normal);
-
-	DrawLine3(bitmap, p1, p2, line_color);
-
-	unsigned int rotation_line_color = 0xFF00FF;
-
-	V3 rotation_vector1 = ShiftVector(normal);
-	V3 rotation_vector2 = ShiftVector(rotation_vector1);
-
-	float rotation_line_length = (2.0f * cube.radius);
-
-	V3 rotation_line1_p1 = p1 - rotation_line_length * (rotations * rotation_vector1);
-	V3 rotation_line1_p2 = p1 + rotation_line_length * (rotations * rotation_vector1);
-
-	V3 rotation_line2_p1 = p1 - rotation_line_length * (rotations * rotation_vector2);
-	V3 rotation_line2_p2 = p1 + rotation_line_length * (rotations * rotation_vector2);
-
-	DrawLine3(bitmap, rotation_line1_p1, rotation_line1_p2, rotation_line_color);
-	DrawLine3(bitmap, rotation_line2_p1, rotation_line2_p2, rotation_line_color);
-}
-*/
 
 static bool
 func CubesAreInOrder(Cube first_cube, Cube second_cube)
@@ -960,7 +897,7 @@ func RoundToHalfPi(float x)
 }
 
 static void
-func DrawScene(Bitmap *bitmap, BigCube *big_cube, V2 mouse_position)
+func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 {
 	static bool is_rotating = false;
 	static bool big_cube_rotation = false;
@@ -976,13 +913,17 @@ func DrawScene(Bitmap *bitmap, BigCube *big_cube, V2 mouse_position)
 	bool is_side_rotating = (is_rotating && !big_cube_rotation);
 
 	unsigned int color = 0xAAAAAA;
-	unsigned int *pixel = bitmap->memory;
-	for(int row = 0; row < bitmap->height; row++)
+	unsigned int *pixel = buffer->colors;
+	unsigned int *cube_face_id = buffer->cube_face_ids;
+	for(int row = 0; row < buffer->height; row++)
 	{
-		for(int col = 0; col < bitmap->width; col++)
+		for(int col = 0; col < buffer->width; col++)
 		{
 			*pixel = color;
 			pixel++;
+
+			*cube_face_id = 0;
+			cube_face_id++;
 		}
 	}
 
@@ -1003,7 +944,7 @@ func DrawScene(Bitmap *bitmap, BigCube *big_cube, V2 mouse_position)
 		big_cube->rotations = rotate_x * rotate_y * big_cube->rotations;
 	}
 
-	V3 screen_center = 0.5f * Point3((float)bitmap->width, (float)bitmap->height, 0.0f);
+	V3 screen_center = 0.5f * Point3((float)buffer->width, (float)buffer->height, 0.0f);
 	for(int i = 0; i < big_cube->cube_n; i++)
 	{
 		Cube *cube = &big_cube->cubes[i];
@@ -1099,11 +1040,11 @@ func DrawScene(Bitmap *bitmap, BigCube *big_cube, V2 mouse_position)
 
 		if(cube.is_rotating) cube_transform = side_rotation_transform;
 
-		DrawCube(bitmap, cube, cube_transform);
+		DrawCube(buffer, cube, cube_transform);
 	}
 
-	unsigned int picked_color = GetPixelColorChecked(bitmap, (int)mouse_position.y, (int)mouse_position.x);
-	int picked_cube_face_id = GetColorAugmentValue(picked_color);
+	unsigned int picked_color = GetPixelColorChecked(buffer, (int)mouse_position.y, (int)mouse_position.x);
+	unsigned int picked_cube_face_id = GetPixelCubeFaceIdChecked(buffer, (int)mouse_position.y, (int)mouse_position.x);
 	int picked_cube_id = picked_cube_face_id / 6;
 	int picked_face_id = picked_cube_face_id % 6;
 
@@ -1181,7 +1122,7 @@ func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cm
 
 	BigCube big_cube = InitBigCube();
 
-	Bitmap *bitmap = &global_bitmap;
+	Buffer *buffer = &global_buffer;
 	global_running = true;
 	while(global_running)
 	{
@@ -1196,8 +1137,8 @@ func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cm
 		BITMAPINFO bitmap_info = {};
 		BITMAPINFOHEADER *header = &bitmap_info.bmiHeader;
 		header->biSize = sizeof(*header);
-		header->biWidth = bitmap->width;
-		header->biHeight = bitmap->height;
+		header->biWidth = buffer->width;
+		header->biHeight = buffer->height;
 		header->biPlanes = 1;
 		header->biBitCount = 32;
 		header->biCompression = BI_RGB;
@@ -1214,12 +1155,12 @@ func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cm
 
 		V2 mouse_position = Point2((float)cursor_point.x, (float)(height - cursor_point.y));
 
-		DrawScene(bitmap, &big_cube, mouse_position);
+		DrawScene(buffer, &big_cube, mouse_position);
 
 		StretchDIBits(context,
-					  0, 0, bitmap->width, bitmap->height,
+					  0, 0, buffer->width, buffer->height,
 					  0, 0, width, height,
-					  bitmap->memory,
+					  buffer->colors,
 					  &bitmap_info,
 					  DIB_RGB_COLORS,
 					  SRCCOPY
