@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-#define CUBE_N 4
+#define CUBE_N 3
 
 #define Assert(condition) if(!(condition)) DebugBreak();
 #define func
@@ -776,12 +776,6 @@ func ShiftVector(V3 v)
 	return r;
 }
 
-static bool
-func CubesAreInOrder(Cube first_cube, Cube second_cube)
-{
-	bool in_order = (first_cube.center_final.z < second_cube.center_final.z);
-	return in_order;
-}
 
 static void
 func SwapCubes(Cube *cube1, Cube *cube2)
@@ -791,14 +785,36 @@ func SwapCubes(Cube *cube1, Cube *cube2)
 	*cube2 = tmp;
 }
 
+static bool
+func CubesAreInOrder(Cube first_cube, Cube second_cube, V3 rotation_axis_final, V3 screen_center)
+{
+	bool in_order = true;
+
+	float distance1 = Dot3(first_cube.center_final - screen_center, rotation_axis_final);
+	float distance2 = Dot3(second_cube.center_final - screen_center, rotation_axis_final);
+
+	if(Abs(distance1 - distance2) > first_cube.radius)
+	{
+		V3 layer_center1 = screen_center + distance1 * rotation_axis_final;
+		V3 layer_center2 = screen_center + distance2 * rotation_axis_final;
+		in_order = (layer_center1.z < layer_center2.z);
+	}
+	else
+	{
+		in_order = (first_cube.center_final.z < second_cube.center_final.z);
+	}
+
+	return in_order;
+}
+
 static void
-func SortCubesByZ(Cube *cubes, int cube_n)
+func SortCubes(Cube *cubes, int cube_n, V3 rotation_axis, V3 screen_center)
 {
 	int i = 1;
 	while(i < cube_n)
 	{
 		int j = i;
-		while(j > 0 && !CubesAreInOrder(cubes[j - 1], cubes[j]))
+		while(j > 0 && !CubesAreInOrder(cubes[j - 1], cubes[j], rotation_axis, screen_center))
 		{
 			SwapCubes(&cubes[j - 1], &cubes[j]);
 			j--;
@@ -957,6 +973,8 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 	}
 
 	M3x3 side_rotation = GetIdentityMatrix();
+	V3 rotation_vector = Vector3(0, 0, 0);
+	V3 rotation_perp_vector = Vector3(0, 0, 0);
 	if(is_side_rotating)
 	{
 		if(global_right_mouse_button_down)
@@ -974,8 +992,8 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 		V3 rotation_vector_base = use_rotation1 ? rotation1_vector : rotation2_vector;
 		V3 rotation_perp_vector_base = use_rotation1 ? rotation2_vector : -rotation1_vector;
 
-		V3 rotation_vector = big_cube->rotations * rotation_vector_base;
-		V3 rotation_perp_vector = big_cube->rotations * rotation_perp_vector_base;
+		rotation_vector = big_cube->rotations * rotation_vector_base;
+		rotation_perp_vector = big_cube->rotations * rotation_perp_vector_base;
 
 		float rotation_distance = use_rotation1 ? rotation1_distance : rotation2_distance;
 		float theta = rotation_distance / 50.0f;
@@ -1029,7 +1047,7 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 		}
 	}
 
-	SortCubesByZ(big_cube->cubes, big_cube->cube_n);
+	SortCubes(big_cube->cubes, big_cube->cube_n, rotation_perp_vector, screen_center);
 
 	M3x3 side_rotation_transform = big_cube->rotations * side_rotation;
 	for(int i = 0; i < big_cube->cube_n; i++) 
