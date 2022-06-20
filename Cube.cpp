@@ -327,7 +327,7 @@ struct M3x3
 static M3x3
 func ColumnMatrix(V3 col1, V3 col2, V3 col3)
 {
-	M3x3 m = 
+	M3x3 m =
 	{
 		{
 			{col1.x, col2.x, col3.x},
@@ -570,7 +570,7 @@ enum CubeCorner
 	CORNER_RDB
 };
 
-V3 unit_cube_corners[8] = 
+V3 unit_cube_corners[8] =
 {
 	{-1.0, +1.0, +1.0f},
 	{-1.0, +1.0, -1.0f},
@@ -592,7 +592,7 @@ enum CubeFace
 	FACE_B
 };
 
-int cube_face_corners[6][4] = 
+int cube_face_corners[6][4] =
 {
 	{CORNER_LUB, CORNER_LUF, CORNER_LDF, CORNER_LDB},
 	{CORNER_RUF, CORNER_RUB, CORNER_RDB, CORNER_RDF},
@@ -602,12 +602,12 @@ int cube_face_corners[6][4] =
 	{CORNER_LUB, CORNER_LDB, CORNER_RDB, CORNER_RUB}
 };
 
-int cube_edges[12][2] = 
+int cube_edges[12][2] =
 {
-	{CORNER_LUF, CORNER_RUF}, {CORNER_RUF, CORNER_RUB}, 
+	{CORNER_LUF, CORNER_RUF}, {CORNER_RUF, CORNER_RUB},
 	{CORNER_RUB, CORNER_LUB}, {CORNER_LUB, CORNER_LUF},
-		
-	{CORNER_LDF, CORNER_RDF}, {CORNER_RDF, CORNER_RDB}, 
+
+	{CORNER_LDF, CORNER_RDF}, {CORNER_RDF, CORNER_RDB},
 	{CORNER_RDB, CORNER_LDB}, {CORNER_LDB, CORNER_LDF},
 
 	{CORNER_LUF, CORNER_LDF}, {CORNER_RUF, CORNER_RDF},
@@ -889,7 +889,7 @@ func NormalizeMatrixValues(M3x3 m)
 	return r;
 }
 
-static float 
+static float
 func RoundToHalfPi(float x)
 {
 	float half_pi = 0.5f * 3.141592653589793238462643383f;
@@ -988,7 +988,7 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 		float rotation2_distance = Dot2(mouse_diff, rotation2_vector_pixel);
 
 		bool use_rotation1 = (Abs(rotation1_distance) > Abs(rotation2_distance));
-		
+
 		V3 rotation_vector_base = use_rotation1 ? rotation1_vector : rotation2_vector;
 		V3 rotation_perp_vector_base = use_rotation1 ? rotation2_vector : -rotation1_vector;
 
@@ -997,9 +997,9 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 
 		float rotation_distance = use_rotation1 ? rotation1_distance : rotation2_distance;
 		float theta = rotation_distance / 50.0f;
-		
+
 		side_rotation = GetRotationAroundAxis(rotation_perp_vector_base, theta);
-	
+
 		Cube *rotating_cube = 0;
 		for(int i = 0; i < big_cube->cube_n; i++)
 		{
@@ -1025,7 +1025,7 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 				cube->is_rotating = false;
 			}
 		}
-		
+
 		if(!global_left_mouse_button_down)
 		{
 			float rounded_theta = RoundToHalfPi(theta);
@@ -1050,7 +1050,7 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 	SortCubes(big_cube->cubes, big_cube->cube_n, rotation_perp_vector, screen_center);
 
 	M3x3 side_rotation_transform = big_cube->rotations * side_rotation;
-	for(int i = 0; i < big_cube->cube_n; i++) 
+	for(int i = 0; i < big_cube->cube_n; i++)
 	{
 		Cube cube = big_cube->cubes[i];
 
@@ -1115,14 +1115,14 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 int CALLBACK
 func WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int cmd_show)
 {
-	WNDCLASS win_class = {};
+	WNDCLASSA win_class = {};
 	win_class.style = CS_OWNDC;
 	win_class.lpfnWndProc = WinCallback;
 	win_class.hInstance = instance;
 	win_class.lpszClassName = "CubeWC";
 
-	RegisterClass(&win_class);
-	HWND window = CreateWindowEx(
+	RegisterClassA(&win_class);
+	HWND window = CreateWindowExA(
 		0,
 		win_class.lpszClassName,
 		"Cube",
