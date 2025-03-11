@@ -298,3 +298,101 @@ func IsPointInQuad2(V2 p, Quad2 q)
 	is_inside &= TurnsRight(q.p[3], q.p[0], p);
 	return is_inside;
 }
+
+union Quat
+{
+	struct
+	{
+		float w;
+		float x;
+		float y;
+		float z;
+	};
+};
+
+// i * i = j * j = k * k = i * j * k = -1
+
+static Quat
+func PositionToQuat(V3 pos)
+{
+	Quat q = {};
+	q.w = 0.0f;
+	q.x = pos.x;
+	q.y = pos.y;
+	q.z = pos.z;
+	return q;
+}
+
+static V3
+func QuatToPosition(Quat q)
+{
+	V3 p = {};
+	p.x = q.x;
+	p.y = q.y;
+	p.z = q.z;
+	return p;
+}
+
+static Quat
+func QuatConjugate(Quat q)
+{
+	Quat q1 = {};
+	q1.w = q.w;
+	q1.x = -q.x;
+	q1.y = -q.y;
+	q1.z = -q.z;
+	return q1;
+}
+
+static Quat
+operator *(Quat q1, Quat q2)
+{
+	Quat q = {};
+
+	int I = 1;
+	int J = 2;
+	int K = 3;
+
+	q.w = q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z;
+	q.x = q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y;
+	q.y = q1.w * q2.y + q1.y * q2.w + q1.z * q2.x - q1.x * q2.z;
+	q.z = q1.w * q2.z + q1.z * q2.w + q1.x * q2.y - q1.y * q2.x;
+
+	return q;
+}
+
+static Quat
+func GetIdentityRotationQuat()
+{
+	Quat q = {};
+	q.w = 1.0f;
+	q.x = 0.0f;
+	q.y = 0.0f;
+	q.z = 0.0f;
+	return q;
+}
+
+static V3
+func QuatRotate(Quat rotations, V3 position)
+{
+	Quat pq = PositionToQuat(position);
+
+	Quat rotations_inv = QuatConjugate(rotations);
+	Quat rq = rotations * pq * rotations_inv;
+
+	return QuatToPosition(rq);
+}
+
+static Quat
+func GetRotationQuat(V3 axis, float angle)
+{
+	float s = sinf(angle * 0.5f);
+	float c = cosf(angle * 0.5f);
+
+	Quat q = {};
+	q.w = c;
+	q.x = s * axis.x;
+	q.y = s * axis.y;
+	q.z = s * axis.z;
+	return q;
+}

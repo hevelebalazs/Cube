@@ -330,7 +330,7 @@ unsigned int cube_face_colors[6] =
 
 struct Cube
 {
-	M3x3 rotations;
+	Quat rotations;
 	V3 center_base;
 	V3 center_final;
 	int id;
@@ -399,13 +399,13 @@ func Dot3(V3 v1, V3 v2)
 }
 
 static void
-func DrawCube(Buffer *buffer, Cube cube, M3x3 rotations)
+func DrawCube(Buffer *buffer, Cube cube, Quat rotations)
 {
 	V3 cube_corners[8] = {};
 	for(int corner_id = 0; corner_id < 8; corner_id++)
 	{
-		cube_corners[corner_id] = cube.center_final +
-			cube.radius * (rotations * (cube.rotations * unit_cube_corners[corner_id]));
+		V3 local_corner = QuatRotate(rotations * cube.rotations, unit_cube_corners[corner_id]);
+		cube_corners[corner_id] = cube.center_final + cube.radius * local_corner;
 	}
 
 	for(int face_id = 0; face_id < 6; face_id++)
@@ -529,7 +529,7 @@ func SortCubes(Cube *cubes, int cube_n, V3 rotation_axis, V3 screen_center)
 
 struct BigCube
 {
-	M3x3 rotations;
+	Quat rotations;
 
 	Cube cubes[CUBE_N * CUBE_N * CUBE_N];
 	int cube_n;
@@ -543,7 +543,7 @@ func InitBigCube()
 
 	BigCube big_cube = {};
 	big_cube.cube_n = sizeof(big_cube.cubes) / sizeof(big_cube.cubes[0]);
-	big_cube.rotations = GetIdentityMatrix();
+	big_cube.rotations = GetIdentityRotationQuat();
 
 	int cube_id = 0;
 	for(int x = 0; x < CUBE_N; x++)
@@ -563,7 +563,7 @@ func InitBigCube()
 
 				cube->id = cube_id;
 
-				cube->rotations = GetIdentityMatrix();
+				cube->rotations = GetIdentityRotationQuat();
 				cube->center_base = offset_base;
 				cube->radius = small_side_radius;
 			}
@@ -571,26 +571,6 @@ func InitBigCube()
 	}
 
 	return big_cube;
-}
-
-static M3x3
-func NormalizeMatrixValues(M3x3 m)
-{
-	M3x3 r = {};
-	for(int row = 0; row < 3; row++)
-	{
-		for(int col = 0; col < 3; col++)
-		{
-			float m_value = m.v[row][col];
-			float r_value = 0.0f;
-			if(m_value < -0.5f) r_value = -1.0f;
-			if(m_value > +0.5f) r_value = +1.0f;
-
-			r.v[row][col] = r_value;
-		}
-	}
-
-	return r;
 }
 
 static float
@@ -656,19 +636,22 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 	if(is_rotating && big_cube_rotation)
 	{
 		float theta_y = mouse_position_diff.x / 100.0f;
-		M3x3 rotate_y = GetYAxisRotation(theta_y);
+		V3 y_axis = Vector3(0.0f, 1.0f, 0.0f);
+		Quat quat_y = GetRotationQuat(y_axis, theta_y);
 
 		float theta_x = (-mouse_position_diff.y) / 100.0f;
-		M3x3 rotate_x = GetXAxisRotation(theta_x);
+		V3 x_axis = Vector3(1.0f, 0.0f, 0.0f);
+		Quat quat_x = GetRotationQuat(x_axis, theta_x);
 
-		big_cube->rotations = rotate_x * rotate_y * big_cube->rotations;
+	
+		big_cube->rotations = quat_x * quat_y * big_cube->rotations;
 	}
 
 	V3 screen_center = 0.5f * Point3((float)buffer->width, (float)buffer->height, 0.0f);
 	for(int i = 0; i < big_cube->cube_n; i++)
 	{
 		Cube *cube = &big_cube->cubes[i];
-		cube->center_final = screen_center + big_cube->rotations * cube->center_base;
+		cube->center_final = screen_center + QuatRotate(big_cube->rotations, cube->center_base);
 	}
 
 	for(int i = 0; i < big_cube->cube_n; i++)
@@ -676,7 +659,7 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 		big_cube->cubes[i].is_rotating = false;
 	}
 
-	M3x3 side_rotation = GetIdentityMatrix();
+	Quat side_rotation = GetIdentityRotationQuat();
 	V3 rotation_vector = Vector3(0, 0, 0);
 	V3 rotation_perp_vector = Vector3(0, 0, 0);
 	if(is_side_rotating)
@@ -696,13 +679,13 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 		V3 rotation_vector_base = use_rotation1 ? rotation1_vector : rotation2_vector;
 		V3 rotation_perp_vector_base = use_rotation1 ? rotation2_vector : -rotation1_vector;
 
-		rotation_vector = big_cube->rotations * rotation_vector_base;
-		rotation_perp_vector = big_cube->rotations * rotation_perp_vector_base;
+		rotation_vector = QuatRotate(big_cube->rotations, rotation_vector_base);
+		rotation_perp_vector = QuatRotate(big_cube->rotations, rotation_perp_vector_base);
 
 		float rotation_distance = use_rotation1 ? rotation1_distance : rotation2_distance;
 		float theta = rotation_distance / 50.0f;
 
-		side_rotation = GetRotationAroundAxis(rotation_perp_vector_base, theta);
+		side_rotation = GetRotationQuat(rotation_perp_vector_base, theta);
 
 		Cube *rotating_cube = 0;
 		for(int i = 0; i < big_cube->cube_n; i++)
@@ -721,8 +704,9 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 			if(Abs(perp_distance - base_perp_distance) < cube_radius)
 			{
 				cube->is_rotating = true;
-				V3 center_base_rotated = side_rotation * cube->center_base;
-				cube->center_final = screen_center + big_cube->rotations * center_base_rotated;
+
+				V3 center_base_rotated = QuatRotate(side_rotation, cube->center_base);
+				cube->center_final = screen_center + QuatRotate(big_cube->rotations, center_base_rotated);
 			}
 			else
 			{
@@ -733,34 +717,33 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 		if(!global_left_mouse_button_down)
 		{
 			float rounded_theta = RoundToHalfPi(theta);
-			M3x3 rotation_to_apply = GetRotationAroundAxis(rotation_perp_vector_base, rounded_theta);
-			rotation_to_apply = NormalizeMatrixValues(rotation_to_apply);
+			Quat rotation_to_apply = GetRotationQuat(rotation_perp_vector_base, rounded_theta);
 			for(int i = 0; i < big_cube->cube_n; i++)
 			{
 				Cube *cube = &big_cube->cubes[i];
 				if(cube->is_rotating)
 				{
 					cube->rotations = rotation_to_apply * cube->rotations;
-					cube->center_base = rotation_to_apply * cube->center_base;
+					cube->center_base = QuatRotate(rotation_to_apply, cube->center_base);
 					cube->is_rotating = false;
 				}
 			}
 
-			side_rotation = GetIdentityMatrix();
+			side_rotation = GetIdentityRotationQuat();
 			is_rotating = false;
 		}
 	}
 
 	SortCubes(big_cube->cubes, big_cube->cube_n, rotation_perp_vector, screen_center);
 
-	M3x3 side_rotation_transform = big_cube->rotations * side_rotation;
+	Quat side_rotation_quat = big_cube->rotations * side_rotation;
 	for(int i = 0; i < big_cube->cube_n; i++)
 	{
 		Cube cube = big_cube->cubes[i];
 
-		M3x3 cube_transform = big_cube->rotations;
+		Quat cube_transform = big_cube->rotations;
 
-		if(cube.is_rotating) cube_transform = side_rotation_transform;
+		if(cube.is_rotating) cube_transform = side_rotation_quat;
 
 		DrawCube(buffer, cube, cube_transform);
 	}
@@ -799,7 +782,7 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 			clicked_pixel = mouse_position;
 
 			float rotation_line_length = cube_at_mouse->radius;
-			V3 face_normal = cube_at_mouse->rotations * GetCubeFaceNormalVector(rotating_face_id);
+			V3 face_normal = QuatRotate(cube_at_mouse->rotations, GetCubeFaceNormalVector(rotating_face_id));
 
 			rotation1_vector = ShiftVector(face_normal);
 			rotation2_vector = ShiftVector(rotation1_vector);
@@ -810,8 +793,8 @@ func DrawScene(Buffer *buffer, BigCube *big_cube, V2 mouse_position)
 			}
 			Assert(IsRightHandedSystem(face_normal, rotation1_vector, rotation2_vector));
 
-			rotation1_vector_pixel = ProjectToScreen(big_cube->rotations * rotation1_vector);
-			rotation2_vector_pixel = ProjectToScreen(big_cube->rotations * rotation2_vector);
+			rotation1_vector_pixel = ProjectToScreen(QuatRotate(big_cube->rotations, rotation1_vector));
+			rotation2_vector_pixel = ProjectToScreen(QuatRotate(big_cube->rotations, rotation2_vector));
 		}
 	}
 }
